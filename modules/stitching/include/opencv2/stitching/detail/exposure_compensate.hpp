@@ -60,6 +60,7 @@ namespace detail {
 class CV_EXPORTS_W ExposureCompensator
 {
 public:
+    ExposureCompensator(): updateGain(true) {}
     virtual ~ExposureCompensator() {}
 
     enum { NO, GAIN, GAIN_BLOCKS, CHANNELS, CHANNELS_BLOCKS };
@@ -132,7 +133,7 @@ private:
 };
 
 /** @brief Exposure compensator which tries to remove exposure related artifacts by adjusting image
-intensities on each channel independantly.
+intensities on each channel independently.
  */
 class CV_EXPORTS_W ChannelsCompensator : public ExposureCompensator
 {
@@ -158,12 +159,17 @@ class CV_EXPORTS_W BlocksCompensator : public ExposureCompensator
 {
 public:
     BlocksCompensator(int bl_width=32, int bl_height=32, int nr_feeds=1)
-            : bl_width_(bl_width), bl_height_(bl_height), nr_feeds_(nr_feeds) {}
+            : bl_width_(bl_width), bl_height_(bl_height), nr_feeds_(nr_feeds), nr_gain_filtering_iterations_(2) {}
     CV_WRAP void apply(int index, Point corner, InputOutputArray image, InputArray mask) CV_OVERRIDE;
     CV_WRAP void getMatGains(CV_OUT std::vector<Mat>& umv) CV_OVERRIDE;
     CV_WRAP void setMatGains(std::vector<Mat>& umv) CV_OVERRIDE;
     CV_WRAP void setNrFeeds(int nr_feeds) { nr_feeds_ = nr_feeds; }
     CV_WRAP int getNrFeeds() { return nr_feeds_; }
+    CV_WRAP void setBlockSize(int width, int height) { bl_width_ = width; bl_height_ = height; }
+    CV_WRAP void setBlockSize(Size size) { setBlockSize(size.width, size.height); }
+    CV_WRAP Size getBlockSize() const { return Size(bl_width_, bl_height_); }
+    CV_WRAP void setNrGainsFilteringIterations(int nr_iterations) { nr_gain_filtering_iterations_ = nr_iterations; }
+    CV_WRAP int getNrGainsFilteringIterations() const { return nr_gain_filtering_iterations_; }
 
 protected:
     template<class Compensator>
@@ -177,6 +183,7 @@ private:
     int bl_width_, bl_height_;
     std::vector<UMat> gain_maps_;
     int nr_feeds_;
+    int nr_gain_filtering_iterations_;
 };
 
 /** @brief Exposure compensator which tries to remove exposure related artifacts by adjusting image block
@@ -189,7 +196,7 @@ public:
     CV_WRAP BlocksGainCompensator(int bl_width = 32, int bl_height = 32)
             : BlocksGainCompensator(bl_width, bl_height, 1) {}
     CV_WRAP BlocksGainCompensator(int bl_width, int bl_height, int nr_feeds)
-            : BlocksCompensator(bl_width, bl_height, nr_feeds) {setUpdateGain(true);}
+            : BlocksCompensator(bl_width, bl_height, nr_feeds) {}
 
     void feed(const std::vector<Point> &corners, const std::vector<UMat> &images,
               const std::vector<std::pair<UMat,uchar> > &masks) CV_OVERRIDE;
@@ -210,7 +217,7 @@ class CV_EXPORTS_W BlocksChannelsCompensator : public BlocksCompensator
 {
 public:
     CV_WRAP BlocksChannelsCompensator(int bl_width=32, int bl_height=32, int nr_feeds=1)
-            : BlocksCompensator(bl_width, bl_height, nr_feeds) {setUpdateGain(true);}
+            : BlocksCompensator(bl_width, bl_height, nr_feeds) {}
 
     void feed(const std::vector<Point> &corners, const std::vector<UMat> &images,
               const std::vector<std::pair<UMat,uchar> > &masks) CV_OVERRIDE;

@@ -62,11 +62,10 @@ Ptr<ExposureCompensator> ExposureCompensator::createDefault(int type)
         e = makePtr<ChannelsCompensator>();
     else if (type == CHANNELS_BLOCKS)
         e = makePtr<BlocksChannelsCompensator>();
+
     if (e.get() != nullptr)
-    {
-        e->setUpdateGain(true);
         return e;
-    }
+
     CV_Error(Error::StsBadArg, "unsupported exposure compensation method");
 }
 
@@ -202,6 +201,12 @@ void GainCompensator::singleFeed(const std::vector<Point> &corners, const std::v
         double alpha = 0.01;
         double beta = 100;
         int num_eq = num_images - countNonZero(skip);
+        gains_.create(num_images, 1);
+        gains_.setTo(1);
+
+        // No image process, gains are all set to one, stop here
+        if (num_eq == 0)
+            return;
 
         Mat_<double> A(num_eq, num_eq); A.setTo(0);
         Mat_<double> b(num_eq, 1); b.setTo(0);
@@ -249,12 +254,10 @@ void GainCompensator::singleFeed(const std::vector<Point> &corners, const std::v
 #endif
         CV_CheckTypeEQ(l_gains.type(), CV_64FC1, "");
 
-        gains_.create(num_images, 1);
         for (int i = 0, j = 0; i < num_images; ++i)
         {
-            if (skip(i, 0))
-                gains_.at<double>(i, 0) = 1;
-            else
+            // Only assign non-skipped gains. Other gains are already set to 1
+            if (!skip(i, 0))
                 gains_.at<double>(i, 0) = l_gains(j++, 0);
         }
     }
@@ -412,8 +415,8 @@ void BlocksCompensator::feed(const std::vector<Point> &corners, const std::vecto
             UMat gain_map = getGainMap(compensator, bl_idx, bl_per_img);
             bl_idx += bl_per_img.width*bl_per_img.height;
 
-            sepFilter2D(gain_map, gain_map, CV_32F, ker, ker);
-            sepFilter2D(gain_map, gain_map, CV_32F, ker, ker);
+            for (int i=0; i<nr_gain_filtering_iterations_; ++i)
+                sepFilter2D(gain_map, gain_map, CV_32F, ker, ker);
 
             gain_maps_[img_idx] = gain_map;
         }

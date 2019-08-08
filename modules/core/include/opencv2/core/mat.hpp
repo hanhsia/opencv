@@ -372,6 +372,9 @@ public:
 
     void assign(const std::vector<UMat>& v) const;
     void assign(const std::vector<Mat>& v) const;
+
+    void move(UMat& u) const;
+    void move(Mat& m) const;
 };
 
 
@@ -3589,9 +3592,9 @@ CV_EXPORTS MatExpr operator * (const MatExpr& e, double s);
 CV_EXPORTS MatExpr operator * (double s, const MatExpr& e);
 CV_EXPORTS MatExpr operator * (const MatExpr& e1, const MatExpr& e2);
 template<typename _Tp, int m, int n> static inline
-MatExpr operator * (const Mat& a, const Matx<_Tp, m, n>& b) { return a + Mat(b); }
+MatExpr operator * (const Mat& a, const Matx<_Tp, m, n>& b) { return a * Mat(b); }
 template<typename _Tp, int m, int n> static inline
-MatExpr operator * (const Matx<_Tp, m, n>& a, const Mat& b) { return Mat(a) + b; }
+MatExpr operator * (const Matx<_Tp, m, n>& a, const Mat& b) { return Mat(a) * b; }
 
 CV_EXPORTS MatExpr operator / (const Mat& a, const Mat& b);
 CV_EXPORTS MatExpr operator / (const Mat& a, double s);

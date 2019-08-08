@@ -32,6 +32,8 @@ endif()
 option(ENABLE_PIC "Generate position independent code (necessary for shared libraries)" TRUE)
 set(CMAKE_POSITION_INDEPENDENT_CODE ${ENABLE_PIC})
 
+set(OPENCV_MATHJAX_RELPATH "https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0" CACHE STRING "URI to a MathJax installation")
+
 # Following block can break build in case of cross-compiling
 # but CMAKE_CROSSCOMPILING variable will be set only on project(OpenCV) command
 # so we will try to detect cross-compiling by the presence of CMAKE_TOOLCHAIN_FILE
@@ -48,35 +50,6 @@ if(NOT DEFINED CMAKE_INSTALL_PREFIX)
     set(LIBRARY_OUTPUT_PATH_ROOT ${CMAKE_BINARY_DIR} CACHE PATH "root for library output, set this to change where android libs are compiled to" )
     # any cross-compiling
     set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "Installation Directory")
-  endif()
-endif()
-
-if(CMAKE_SYSTEM_NAME MATCHES WindowsPhone OR CMAKE_SYSTEM_NAME MATCHES WindowsStore)
-  set(WINRT TRUE)
-endif()
-
-if(WINRT)
-  add_definitions(-DWINRT -DNO_GETENV)
-
-  # Making definitions available to other configurations and
-  # to filter dependency restrictions at compile time.
-  if(CMAKE_SYSTEM_NAME MATCHES WindowsPhone)
-    set(WINRT_PHONE TRUE)
-    add_definitions(-DWINRT_PHONE)
-  elseif(CMAKE_SYSTEM_NAME MATCHES WindowsStore)
-    set(WINRT_STORE TRUE)
-    add_definitions(-DWINRT_STORE)
-  endif()
-
-  if(CMAKE_SYSTEM_VERSION MATCHES 10)
-    set(WINRT_10 TRUE)
-    add_definitions(-DWINRT_10)
-  elseif(CMAKE_SYSTEM_VERSION MATCHES 8.1)
-    set(WINRT_8_1 TRUE)
-    add_definitions(-DWINRT_8_1)
-  elseif(CMAKE_SYSTEM_VERSION MATCHES 8.0)
-    set(WINRT_8_0 TRUE)
-    add_definitions(-DWINRT_8_0)
   endif()
 endif()
 
@@ -108,6 +81,10 @@ if(POLICY CMP0067)
   cmake_policy(SET CMP0067 NEW)
 endif()
 
+if(POLICY CMP0068)
+  cmake_policy(SET CMP0068 NEW)  # CMake 3.9+: `RPATH` settings on macOS do not affect `install_name`.
+endif()
+
 include(cmake/OpenCVUtils.cmake)
 ocv_cmake_reset_hooks()
 ocv_check_environment_variables(OPENCV_CMAKE_HOOKS_DIR)
@@ -129,6 +106,39 @@ endif()
 enable_testing()
 
 project(OpenCV CXX C)
+
+if(CMAKE_SYSTEM_NAME MATCHES WindowsPhone OR CMAKE_SYSTEM_NAME MATCHES WindowsStore)
+  set(WINRT TRUE)
+endif()
+
+if(WINRT OR WINCE)
+  add_definitions(-DNO_GETENV)
+endif()
+
+if(WINRT)
+  add_definitions(-DWINRT)
+
+  # Making definitions available to other configurations and
+  # to filter dependency restrictions at compile time.
+  if(CMAKE_SYSTEM_NAME MATCHES WindowsPhone)
+    set(WINRT_PHONE TRUE)
+    add_definitions(-DWINRT_PHONE)
+  elseif(CMAKE_SYSTEM_NAME MATCHES WindowsStore)
+    set(WINRT_STORE TRUE)
+    add_definitions(-DWINRT_STORE)
+  endif()
+
+  if(CMAKE_SYSTEM_VERSION MATCHES 10)
+    set(WINRT_10 TRUE)
+    add_definitions(-DWINRT_10)
+  elseif(CMAKE_SYSTEM_VERSION MATCHES 8.1)
+    set(WINRT_8_1 TRUE)
+    add_definitions(-DWINRT_8_1)
+  elseif(CMAKE_SYSTEM_VERSION MATCHES 8.0)
+    set(WINRT_8_0 TRUE)
+    add_definitions(-DWINRT_8_0)
+  endif()
+endif()
 
 if(MSVC)
   set(CMAKE_USE_RELATIVE_PATHS ON CACHE INTERNAL "" FORCE)
@@ -215,7 +225,10 @@ OCV_OPTION(BUILD_OPENEXR            "Build openexr from source"          (((WIN3
 OCV_OPTION(BUILD_WEBP               "Build WebP from source"             (((WIN32 OR ANDROID OR APPLE) AND NOT WINRT) OR OPENCV_FORCE_3RDPARTY_BUILD) )
 OCV_OPTION(BUILD_TBB                "Download and build TBB from source" (ANDROID OR OPENCV_FORCE_3RDPARTY_BUILD) )
 OCV_OPTION(BUILD_IPP_IW             "Build IPP IW from source"           (NOT MINGW OR OPENCV_FORCE_3RDPARTY_BUILD) IF (X86_64 OR X86) AND NOT WINRT )
-OCV_OPTION(BUILD_ITT                "Build Intel ITT from source"        (NOT MINGW OR OPENCV_FORCE_3RDPARTY_BUILD) IF (X86_64 OR X86) AND NOT WINRT AND NOT APPLE_FRAMEWORK )
+OCV_OPTION(BUILD_ITT                "Build Intel ITT from source"
+    (NOT MINGW OR OPENCV_FORCE_3RDPARTY_BUILD)
+    IF (X86_64 OR X86 OR ARM OR AARCH64 OR PPC64 OR PPC64LE) AND NOT WINRT AND NOT APPLE_FRAMEWORK
+)
 
 # Optional 3rd party components
 # ===================================================
@@ -245,14 +258,17 @@ OCV_OPTION(WITH_CUFFT "Include NVidia Cuda Fast Fourier Transform (FFT) library 
 OCV_OPTION(WITH_CUBLAS "Include NVidia Cuda Basic Linear Algebra Subprograms (BLAS) library support" WITH_CUDA
   VISIBLE_IF WITH_CUDA
   VERIFY HAVE_CUBLAS)
-OCV_OPTION(WITH_NVCUVID "Include NVidia Video Decoding library support" WITH_CUDA
+OCV_OPTION(WITH_CUDNN "Include NVIDIA CUDA Deep Neural Network (cuDNN) library support" WITH_CUDA
+  VISIBLE_IF WITH_CUDA
+  VERIFY HAVE_CUDNN)
+OCV_OPTION(WITH_NVCUVID "Include NVidia Video Decoding library support" OFF  # disabled, details: https://github.com/opencv/opencv/issues/14850
   VISIBLE_IF WITH_CUDA
   VERIFY HAVE_NVCUVID)
-OCV_OPTION(WITH_EIGEN "Include Eigen2/Eigen3 support" (NOT CV_DISABLE_OPTIMIZATION)
-  VISIBLE_IF NOT WINRT AND NOT CMAKE_CROSSCOMPILING
+OCV_OPTION(WITH_EIGEN "Include Eigen2/Eigen3 support" (NOT CV_DISABLE_OPTIMIZATION AND NOT CMAKE_CROSSCOMPILING)
+  VISIBLE_IF NOT WINRT
   VERIFY HAVE_EIGEN)
-OCV_OPTION(WITH_FFMPEG "Include FFMPEG support" ON
-  VISIBLE_IF NOT ANDROID AND NOT IOS AND NOT WINRT
+OCV_OPTION(WITH_FFMPEG "Include FFMPEG support" (NOT ANDROID)
+  VISIBLE_IF NOT IOS AND NOT WINRT
   VERIFY HAVE_FFMPEG)
 OCV_OPTION(WITH_GSTREAMER "Include Gstreamer support" ON
   VISIBLE_IF NOT ANDROID AND NOT IOS AND NOT WINRT
@@ -284,8 +300,8 @@ OCV_OPTION(WITH_JPEG "Include JPEG support" ON
 OCV_OPTION(WITH_WEBP "Include WebP support" ON
   VISIBLE_IF NOT WINRT
   VERIFY HAVE_WEBP)
-OCV_OPTION(WITH_OPENEXR "Include ILM support via OpenEXR" ON
-  VISIBLE_IF NOT IOS AND NOT WINRT
+OCV_OPTION(WITH_OPENEXR "Include ILM support via OpenEXR" BUILD_OPENEXR OR NOT CMAKE_CROSSCOMPILING
+  VISIBLE_IF NOT APPLE_FRAMEWORK AND NOT WINRT
   VERIFY HAVE_OPENEXR)
 OCV_OPTION(WITH_OPENGL "Include OpenGL support" OFF
   VISIBLE_IF NOT ANDROID AND NOT WINRT
@@ -368,6 +384,9 @@ OCV_OPTION(WITH_OPENCLAMDBLAS "Include AMD OpenCL BLAS library support" ON
 OCV_OPTION(WITH_DIRECTX "Include DirectX support" ON
   VISIBLE_IF WIN32 AND NOT WINRT
   VERIFY HAVE_DIRECTX)
+OCV_OPTION(WITH_OPENCL_D3D11_NV "Include NVIDIA OpenCL D3D11 support" WITH_DIRECTX
+  VISIBLE_IF WIN32 AND NOT WINRT
+  VERIFY HAVE_OPENCL_D3D11_NV)
 OCV_OPTION(WITH_LIBREALSENSE "Include Intel librealsense support" OFF
   VISIBLE_IF NOT WITH_INTELPERC
   VERIFY HAVE_LIBREALSENSE)
@@ -410,6 +429,9 @@ OCV_OPTION(WITH_IMGCODEC_PFM "Include PFM formats support" ON
 OCV_OPTION(WITH_QUIRC "Include library QR-code decoding" ON
   VISIBLE_IF TRUE
   VERIFY HAVE_QUIRC)
+OCV_OPTION(WITH_ANDROID_MEDIANDK "Use Android Media NDK for Video I/O (Android)" (ANDROID_NATIVE_API_LEVEL GREATER 20)
+  VISIBLE_IF ANDROID
+  VERIFY HAVE_ANDROID_MEDIANDK)
 
 # OpenCV build components
 # ===================================================
@@ -443,13 +465,14 @@ OCV_OPTION(INSTALL_TESTS            "Install accuracy and performance test binar
 # OpenCV build options
 # ===================================================
 OCV_OPTION(ENABLE_CCACHE              "Use ccache"                                               (UNIX AND NOT IOS AND (CMAKE_GENERATOR MATCHES "Makefile" OR CMAKE_GENERATOR MATCHES "Ninja")) )
-OCV_OPTION(ENABLE_PRECOMPILED_HEADERS "Use precompiled headers"                                  ON IF (MSVC OR (NOT IOS AND NOT CMAKE_CROSSCOMPILING) ) )
+OCV_OPTION(ENABLE_PRECOMPILED_HEADERS "Use precompiled headers"                                  MSVC IF (MSVC OR (NOT IOS AND NOT CMAKE_CROSSCOMPILING) ) )
 OCV_OPTION(ENABLE_SOLUTION_FOLDERS    "Solution folder in Visual Studio or in other IDEs"        (MSVC_IDE OR CMAKE_GENERATOR MATCHES Xcode) )
 OCV_OPTION(ENABLE_PROFILING           "Enable profiling in the GCC compiler (Add flags: -g -pg)" OFF  IF CV_GCC )
 OCV_OPTION(ENABLE_COVERAGE            "Enable coverage collection with  GCov"                    OFF  IF CV_GCC )
+OCV_OPTION(OPENCV_ENABLE_MEMORY_SANITIZER "Better support for memory/address sanitizers"         OFF)
 OCV_OPTION(ENABLE_OMIT_FRAME_POINTER  "Enable -fomit-frame-pointer for GCC"                      ON   IF CV_GCC )
 OCV_OPTION(ENABLE_POWERPC             "Enable PowerPC for GCC"                                   ON   IF (CV_GCC AND CMAKE_SYSTEM_PROCESSOR MATCHES powerpc.*) )
-OCV_OPTION(ENABLE_FAST_MATH           "Enable -ffast-math (not recommended for GCC 4.6.x)"       OFF  IF (CV_GCC AND (X86 OR X86_64)) )
+OCV_OPTION(ENABLE_FAST_MATH           "Enable compiler options for fast math optimizations on FP computations (not recommended)" OFF)
 if(NOT IOS AND (NOT ANDROID OR OPENCV_ANDROID_USE_LEGACY_FLAGS))  # Use CPU_BASELINE instead
 OCV_OPTION(ENABLE_NEON                "Enable NEON instructions"                                 (NEON OR ANDROID_ARM_NEON OR AARCH64) IF (CV_GCC OR CV_CLANG) AND (ARM OR AARCH64 OR IOS) )
 OCV_OPTION(ENABLE_VFPV3               "Enable VFPv3-D32 instructions"                            OFF  IF (CV_GCC OR CV_CLANG) AND (ARM OR AARCH64 OR IOS) )
@@ -577,7 +600,7 @@ else()
     # Note: layout differs from OpenCV 3.4
     include(GNUInstallDirs)
     ocv_update(OPENCV_INCLUDE_INSTALL_PATH       "${CMAKE_INSTALL_INCLUDEDIR}/opencv4")
-    ocv_update(OPENCV_LIB_INSTALL_PATH           "${CMAKE_INSTALL_LIBDIR}${LIB_SUFFIX}")
+    ocv_update(OPENCV_LIB_INSTALL_PATH           "${CMAKE_INSTALL_LIBDIR}")
     ocv_update(OPENCV_CONFIG_INSTALL_PATH        "${OPENCV_LIB_INSTALL_PATH}/cmake/opencv4")
     ocv_update(OPENCV_3P_LIB_INSTALL_PATH        "${OPENCV_LIB_INSTALL_PATH}/opencv4/3rdparty")
     ocv_update(OPENCV_SAMPLES_SRC_INSTALL_PATH   "${CMAKE_INSTALL_DATAROOTDIR}/opencv4/samples")
@@ -688,7 +711,7 @@ ocv_cmake_hook(POST_COMPILER_OPTIONS)
 # ----------------------------------------------------------------------------
 if(UNIX)
   if(NOT APPLE_FRAMEWORK OR OPENCV_ENABLE_PKG_CONFIG)
-    if(CMAKE_CROSSCOMPILING AND NOT DEFINED ENV{PKG_CONFIG_LIBDIR}
+    if(CMAKE_CROSSCOMPILING AND NOT DEFINED ENV{PKG_CONFIG_LIBDIR} AND NOT DEFINED ENV{PKG_CONFIG_SYSROOT_DIR}
         AND NOT OPENCV_ENABLE_PKG_CONFIG
     )
       if(NOT PkgConfig_FOUND)
@@ -712,7 +735,7 @@ if(UNIX)
     CHECK_INCLUDE_FILE(pthread.h HAVE_PTHREAD)
     if(ANDROID)
       set(OPENCV_LINKER_LIBS ${OPENCV_LINKER_LIBS} dl m log)
-    elseif(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD|NetBSD|DragonFly|OpenBSD|Haiku")
+    elseif(CMAKE_SYSTEM_NAME MATCHES "FreeBSD|NetBSD|DragonFly|OpenBSD|Haiku")
       set(OPENCV_LINKER_LIBS ${OPENCV_LINKER_LIBS} m pthread)
     elseif(EMSCRIPTEN)
       # no need to link to system libs with emscripten
@@ -900,34 +923,14 @@ unset(_hal_includes)
 
 
 # ----------------------------------------------------------------------------
-# Add CUDA libraries (needed for apps/tools, samples)
-# ----------------------------------------------------------------------------
-if(HAVE_CUDA)
-  set(OPENCV_LINKER_LIBS ${OPENCV_LINKER_LIBS} ${CUDA_LIBRARIES} ${CUDA_npp_LIBRARY})
-  if(HAVE_CUBLAS)
-    set(OPENCV_LINKER_LIBS ${OPENCV_LINKER_LIBS} ${CUDA_cublas_LIBRARY})
-  endif()
-  if(HAVE_CUFFT)
-    set(OPENCV_LINKER_LIBS ${OPENCV_LINKER_LIBS} ${CUDA_cufft_LIBRARY})
-  endif()
-  foreach(p ${CUDA_LIBS_PATH})
-    if(MSVC AND CMAKE_GENERATOR MATCHES "Ninja|JOM")
-      set(OPENCV_LINKER_LIBS ${OPENCV_LINKER_LIBS} ${CMAKE_LIBRARY_PATH_FLAG}"${p}")
-    else()
-      set(OPENCV_LINKER_LIBS ${OPENCV_LINKER_LIBS} ${CMAKE_LIBRARY_PATH_FLAG}${p})
-    endif()
-  endforeach()
-endif()
-
-
-# ----------------------------------------------------------------------------
 # Code trace support
 # ----------------------------------------------------------------------------
 if(CV_TRACE)
   include(cmake/OpenCVDetectTrace.cmake)
 endif()
 
-ocv_cmake_hook(POST_DETECT_DEPENDECIES)
+ocv_cmake_hook(POST_DETECT_DEPENDECIES)  # typo, deprecated (2019-06)
+ocv_cmake_hook(POST_DETECT_DEPENDENCIES)
 
 # ----------------------------------------------------------------------------
 # Solution folders:
@@ -965,7 +968,7 @@ if(BUILD_opencv_apps)
 endif()
 
 # examples
-if(BUILD_EXAMPLES OR BUILD_ANDROID_EXAMPLES OR INSTALL_PYTHON_EXAMPLES OR INSTALL_C_EXAMPLES)
+if(BUILD_EXAMPLES OR BUILD_ANDROID_EXAMPLES OR INSTALL_ANDROID_EXAMPLES OR INSTALL_PYTHON_EXAMPLES OR INSTALL_C_EXAMPLES)
   add_subdirectory(samples)
 endif()
 
@@ -1175,7 +1178,13 @@ status("    3rdparty dependencies:" ${deps_3rdparty})
 # ========================== OpenCV modules ==========================
 status("")
 status("  OpenCV modules:")
-string(REPLACE "opencv_" "" OPENCV_MODULES_BUILD_ST          "${OPENCV_MODULES_BUILD}")
+set(OPENCV_MODULES_BUILD_ST "")
+foreach(the_module ${OPENCV_MODULES_BUILD})
+  if(NOT OPENCV_MODULE_${the_module}_CLASS STREQUAL "INTERNAL" OR the_module STREQUAL "opencv_ts")
+    list(APPEND OPENCV_MODULES_BUILD_ST "${the_module}")
+  endif()
+endforeach()
+string(REPLACE "opencv_" "" OPENCV_MODULES_BUILD_ST          "${OPENCV_MODULES_BUILD_ST}")
 string(REPLACE "opencv_" "" OPENCV_MODULES_DISABLED_USER_ST  "${OPENCV_MODULES_DISABLED_USER}")
 string(REPLACE "opencv_" "" OPENCV_MODULES_DISABLED_AUTO_ST  "${OPENCV_MODULES_DISABLED_AUTO}")
 string(REPLACE "opencv_" "" OPENCV_MODULES_DISABLED_FORCE_ST "${OPENCV_MODULES_DISABLED_FORCE}")
@@ -1194,7 +1203,7 @@ ocv_build_features_string(apps_status
   IF BUILD_EXAMPLES THEN "examples"
   IF BUILD_opencv_apps THEN "apps"
   IF BUILD_ANDROID_SERVICE THEN "android_service"
-  IF BUILD_ANDROID_EXAMPLES AND CAN_BUILD_ANDROID_PROJECTS THEN "android_examples"
+  IF (BUILD_ANDROID_EXAMPLES OR INSTALL_ANDROID_EXAMPLES) AND CAN_BUILD_ANDROID_PROJECTS THEN "android_examples"
   ELSE "-")
 status("    Applications:" "${apps_status}")
 ocv_build_features_string(docs_status
@@ -1285,15 +1294,15 @@ endif()
 
 if(WITH_GTK OR HAVE_GTK)
   if(HAVE_GTK3)
-    status("    GTK+:" "YES (ver ${ALIASOF_gtk+-3.0_VERSION})")
+    status("    GTK+:" "YES (ver ${GTK3_VERSION})")
   elseif(HAVE_GTK)
-    status("    GTK+:" "YES (ver ${ALIASOF_gtk+-2.0_VERSION})")
+    status("    GTK+:" "YES (ver ${GTK2_VERSION})")
   else()
     status("    GTK+:" "NO")
   endif()
   if(HAVE_GTK)
-    status(  "      GThread :" HAVE_GTHREAD THEN "YES (ver ${ALIASOF_gthread-2.0_VERSION})" ELSE NO)
-    status(  "      GtkGlExt:" HAVE_GTKGLEXT THEN "YES (ver ${ALIASOF_gtkglext-1.0_VERSION})" ELSE NO)
+    status(  "      GThread :" HAVE_GTHREAD THEN "YES (ver ${GTHREAD_VERSION})" ELSE NO)
+    status(  "      GtkGlExt:" HAVE_GTKGLEXT THEN "YES (ver ${GTKGLEXT_VERSION})" ELSE NO)
   endif()
 endif()
 
@@ -1337,7 +1346,11 @@ if(WITH_JASPER OR HAVE_JASPER)
 endif()
 
 if(WITH_OPENEXR OR HAVE_OPENEXR)
-  status("    OpenEXR:" OPENEXR_FOUND THEN "${OPENEXR_LIBRARIES} (ver ${OPENEXR_VERSION})" ELSE "build (ver ${OPENEXR_VERSION})")
+  if(HAVE_OPENEXR)
+    status("    OpenEXR:" OPENEXR_FOUND THEN "${OPENEXR_LIBRARIES} (ver ${OPENEXR_VERSION})" ELSE "build (ver ${OPENEXR_VERSION})")
+  else()
+    status("    OpenEXR:" "NO")
+  endif()
 endif()
 
 if(WITH_GDAL OR HAVE_GDAL)
@@ -1433,7 +1446,7 @@ if(WITH_XIMEA OR HAVE_XIMEA)
 endif()
 
 if(WITH_XINE OR HAVE_XINE)
-  status("    Xine:" HAVE_XINE THEN "YES (${XINE_VERSION})" ELSE NO)
+  status("    Xine:"           HAVE_XINE           THEN "YES (ver ${XINE_VERSION})"     ELSE NO)
 endif()
 
 if(WITH_LIBREALSENSE OR HAVE_LIBREALSENSE)
@@ -1510,11 +1523,16 @@ if(WITH_INF_ENGINE OR INF_ENGINE_TARGET)
   if(INF_ENGINE_TARGET)
     set(__msg "YES (${INF_ENGINE_RELEASE} / ${INF_ENGINE_VERSION})")
     get_target_property(_lib ${INF_ENGINE_TARGET} IMPORTED_LOCATION)
-    if(NOT _lib)
-      get_target_property(_lib_rel ${INF_ENGINE_TARGET} IMPORTED_IMPLIB_RELEASE)
-      get_target_property(_lib_dbg ${INF_ENGINE_TARGET} IMPORTED_IMPLIB_DEBUG)
-      set(_lib "${_lib_rel} / ${_lib_dbg}")
-    endif()
+    get_target_property(_lib_imp_rel ${INF_ENGINE_TARGET} IMPORTED_IMPLIB_RELEASE)
+    get_target_property(_lib_imp_dbg ${INF_ENGINE_TARGET} IMPORTED_IMPLIB_DEBUG)
+    get_target_property(_lib_rel ${INF_ENGINE_TARGET} IMPORTED_LOCATION_RELEASE)
+    get_target_property(_lib_dbg ${INF_ENGINE_TARGET} IMPORTED_LOCATION_DEBUG)
+    ocv_build_features_string(_lib
+      IF _lib THEN "${_lib}"
+      IF _lib_imp_rel AND _lib_imp_dbg THEN "${_lib_imp_rel} / ${_lib_imp_dbg}"
+      IF _lib_rel AND _lib_dbg THEN "${_lib_rel} / ${_lib_dbg}"
+      ELSE "unknown"
+    )
     get_target_property(_inc ${INF_ENGINE_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
     status("    Inference Engine:" "${__msg}")
     status("                libs:" "${_lib}")
@@ -1551,6 +1569,11 @@ if(WITH_CUDA OR HAVE_CUDA)
     status("    NVIDIA GPU arch:"      ${OPENCV_CUDA_ARCH_BIN})
     status("    NVIDIA PTX archs:"     ${OPENCV_CUDA_ARCH_PTX})
   endif()
+ endif()
+
+ if(WITH_CUDNN OR HAVE_CUDNN)
+    status("")
+    status("  cuDNN:" HAVE_CUDNN THEN "YES (ver ${CUDNN_VERSION})" ELSE NO)
 endif()
 
 if(WITH_VULKAN OR HAVE_VULKAN)
@@ -1567,6 +1590,7 @@ if(WITH_OPENCL OR HAVE_OPENCL)
     IF HAVE_OPENCL_SVM THEN "SVM"
     IF HAVE_CLAMDFFT THEN "AMDFFT"
     IF HAVE_CLAMDBLAS THEN "AMDBLAS"
+    IF HAVE_OPENCL_D3D11_NV THEN "NVD3D11"
     ELSE "no extra features")
   status("")
   status("  OpenCL:"     HAVE_OPENCL   THEN   "YES (${opencl_features})" ELSE "NO")

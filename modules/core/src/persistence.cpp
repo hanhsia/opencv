@@ -342,14 +342,6 @@ static inline void writeReal(uchar* p, double fval)
 class FileStorage::Impl : public FileStorage_API
 {
 public:
-    enum State
-    {
-        UNDEFINED      = 0,
-        VALUE_EXPECTED = 1,
-        NAME_EXPECTED  = 2,
-        INSIDE_MAP     = 4
-    };
-
     void init()
     {
         flags = 0;
@@ -724,7 +716,7 @@ public:
             else if(strncmp( bufPtr, xml_signature, strlen(xml_signature) ) == 0)
                 fmt = FileStorage::FORMAT_XML;
             else if(strbufsize  == bufOffset)
-                CV_Error(CV_BADARG_ERR, "Input file is empty");
+                CV_Error(CV_BADARG_ERR, "Input file is invalid");
             else
                 CV_Error(CV_BADARG_ERR, "Unsupported file storage format");
 
